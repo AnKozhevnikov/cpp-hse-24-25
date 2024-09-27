@@ -12,9 +12,8 @@
 // Class of searching tree. which can do such basic things, as std::map
 // It is implemented using treap, which is a binary search tree with random priorities
 // Algorithm taken from https://neerc.ifmo.ru/wiki/index.php?title=Декартово_дерево
-/// TODO: provide default constructors and destructors, copy constructors and assignment operators
 template <class K, class V>
-class SearchingTree : public std::enable_shared_from_this<SearchingTree<K, V>>
+class SearchingTree
 {
 private:
     // Node of treap, which contains key, value, priority, pointers to left and right children and parent
@@ -23,8 +22,6 @@ private:
     //  priority - random priority of the node
     //  left - pointer to the left child, null if there is no left child
     //  right - pointer to the right child, null if there is no right child
-    //  parent - pointer to the parent of the node, null if there is no parent
-    //(parent of node is used, despite the task limitations, because it's the only easy algorithm for finding next and previous elements and deleting nodes)
     class Node
     {
     public:
@@ -134,7 +131,7 @@ public:
     SearchingTree::Iterator end() const;
 
     // return vector of pairs of keys and values, which keys are in the range [l, r)
-    std::vector<std::pair<K, V>> range(K l, K r) const;
+    std::vector<std::pair<const K&, V&>> range(K l, K r) const;
 };
 
 template <class K, class V>
@@ -540,9 +537,9 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::end() const
 }
 
 template <class K, class V>
-std::vector<std::pair<K, V>> SearchingTree<K, V>::range(K l, K r) const
+std::vector<std::pair<const K&, V&>> SearchingTree<K, V>::range(K l, K r) const
 {
-    std::vector<std::pair<K, V>> ret;
+    std::vector<std::pair<const K&, V&>> ret;
     Iterator it = lower_bound(l);
     while (it != end() && it->first < r)
     {
