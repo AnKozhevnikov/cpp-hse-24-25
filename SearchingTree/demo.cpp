@@ -16,7 +16,11 @@ signed main()
 
     st.erase(1);
 
-    for (const auto &[k, v] : st.range(2, 10)) {
+    for (auto &[k, v] : st.range(2, 10)) {
+        std::cout << k << ' ' << v << std::endl;
+    }
+
+    for (auto &[k,v] : st) {
         std::cout << k << ' ' << v << std::endl;
     }
 }

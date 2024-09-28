@@ -17,18 +17,14 @@ class SearchingTree
 {
 private:
     // Node of treap, which contains key, value, priority, pointers to left and right children and parent
-    //  key - key of the node
-    //  value - value of the node
+    //  data - shared pointer to the pair of key and value
     //  priority - random priority of the node
     //  left - pointer to the left child, null if there is no left child
     //  right - pointer to the right child, null if there is no right child
     class Node
     {
     public:
-        K key;
-        V value;
-
-        Node() = default;
+        std::shared_ptr<std::pair<K, V>> data;
 
     private:
         int priority;
@@ -45,13 +41,16 @@ private:
     std::mt19937 engine;
 
     // split the treap into two treaps: first contains all nodes with keys less than k, second contains all nodes with keys greater than k
-    std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>> split(std::shared_ptr<Node> v, int k);
+    std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>> split(std::shared_ptr<Node> v, K k);
 
     // merge two treaps into one, keys of the left one are obligated to be less than keys of the right one
     std::shared_ptr<Node> merge(std::shared_ptr<Node> l, std::shared_ptr<Node> r);
 
     // update leftest and rightest pointers
     void updateBounds();
+
+    // recursive copy of the treap
+    void recursiveCopy(const std::shared_ptr<Node> &v, std::shared_ptr<Node> &v2);
 
 public:
     // Iterator for SearchingTree
@@ -76,7 +75,7 @@ public:
 
         Iterator operator--(int);
 
-        std::pair<const K &, V &> operator*();
+        std::pair<const K &, V &> &operator*();
 
         std::shared_ptr<std::pair<const K &, V &>> operator->();
 
@@ -98,8 +97,6 @@ public:
     };
 
     SearchingTree();
-
-    void recursiveCopy(const std::shared_ptr<Node> &v, std::shared_ptr<Node> &v2);
 
     SearchingTree(const SearchingTree &st);
 
@@ -131,18 +128,18 @@ public:
     SearchingTree::Iterator end() const;
 
     // return vector of pairs of keys and values, which keys are in the range [l, r)
-    std::vector<std::pair<const K&, V&>> range(K l, K r) const;
+    const std::vector<std::pair<const K &, V &>> range(K l, K r) const;
 };
 
 template <class K, class V>
 std::pair<std::shared_ptr<typename SearchingTree<K, V>::Node>, std::shared_ptr<typename SearchingTree<K, V>::Node>>
-SearchingTree<K, V>::split(std::shared_ptr<typename SearchingTree<K, V>::Node> v, int k)
+SearchingTree<K, V>::split(std::shared_ptr<typename SearchingTree<K, V>::Node> v, K k)
 {
     if (v == nullptr)
     {
         return std::make_pair(nullptr, nullptr);
     }
-    else if (k > v->key)
+    else if (k > v->data->first)
     {
         std::pair<std::shared_ptr<typename SearchingTree<K, V>::Node>, std::shared_ptr<typename SearchingTree<K, V>::Node>> p = split(v->right, k);
         v->right = p.first;
@@ -202,7 +199,7 @@ void SearchingTree<K, V>::updateBounds()
 template <class K, class V>
 SearchingTree<K, V>::Iterator::Iterator(const std::shared_ptr<Node> &n, const SearchingTree *st) : v(n), myTree(st)
 {
-    p = std::make_shared<std::pair<const K &, V &>>(std::cref(n->key), std::ref(n->value));
+    p = std::make_shared<std::pair<const K &, V &>>(std::cref(n->data->first), std::ref(n->data->second));
 
     if (n == myTree->reserved)
         return;
@@ -210,7 +207,7 @@ SearchingTree<K, V>::Iterator::Iterator(const std::shared_ptr<Node> &n, const Se
     while (cur != n)
     {
         parents.push(cur);
-        if (n->key < cur->key)
+        if (n->data->first < cur->data->first)
             cur = cur->left;
         else
             cur = cur->right;
@@ -218,7 +215,7 @@ SearchingTree<K, V>::Iterator::Iterator(const std::shared_ptr<Node> &n, const Se
 }
 
 template <class K, class V>
-typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator=(const Iterator &other)
+typename SearchingTree<K, V>::Iterator &SearchingTree<K, V>::Iterator::operator=(const Iterator &other)
 {
     if (this != &other)
     {
@@ -252,7 +249,7 @@ bool SearchingTree<K, V>::Iterator::operator!=(const Iterator &it) const
 }
 
 template <class K, class V>
-typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator++()
+typename SearchingTree<K, V>::Iterator &SearchingTree<K, V>::Iterator::operator++()
 {
     std::shared_ptr<Node> cur = v.lock();
 
@@ -263,13 +260,13 @@ typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator+
         while (true)
         {
             std::shared_ptr<Node> prev = cur;
-            cur = parents.top().lock();
-            parents.pop();
-            if (cur == nullptr)
+            if (parents.empty())
             {
                 cur = myTree->reserved;
                 break;
             }
+            cur = parents.top().lock();
+            parents.pop();
             if (cur->left == prev)
                 break;
         }
@@ -278,8 +275,10 @@ typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator+
     {
         parents.push(cur);
         cur = cur->right;
-        while (cur->left != nullptr)
+        while (cur->left != nullptr) {
+            parents.push(cur);
             cur = cur->left;
+        }
     }
     v = cur;
     updatePair();
@@ -295,7 +294,7 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::Iterator::operator++
 }
 
 template <class K, class V>
-typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator--()
+typename SearchingTree<K, V>::Iterator &SearchingTree<K, V>::Iterator::operator--()
 {
     std::weak_ptr<Node> cur = v;
 
@@ -306,10 +305,12 @@ typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator-
         while (true)
         {
             std::weak_ptr<Node> prev = cur;
+            if (parents.empty())
+            {
+                throw std::range_error("Iterator out of bounds");
+            }
             cur = parents.top().lock();
             parents.pop();
-            if (cur == nullptr)
-                throw std::range_error("Iterator out of bounds");
             if (cur->right == prev)
                 break;
         }
@@ -318,8 +319,10 @@ typename SearchingTree<K, V>::Iterator& SearchingTree<K, V>::Iterator::operator-
     {
         parents.push(cur);
         cur = cur->left;
-        while (cur->right != nullptr)
+        while (cur->right != nullptr) {
+            parents.push(cur);
             cur = cur->right;
+        }
     }
     v = cur;
     updatePair();
@@ -335,7 +338,7 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::Iterator::operator--
 }
 
 template <class K, class V>
-std::pair<const K &, V &> SearchingTree<K, V>::Iterator::operator*()
+std::pair<const K &, V &> &SearchingTree<K, V>::Iterator::operator*()
 {
     return *p;
 }
@@ -350,7 +353,7 @@ template <class K, class V>
 void SearchingTree<K, V>::Iterator::updatePair()
 {
     std::shared_ptr<Node> cur = v.lock();
-    p = std::make_shared<std::pair<const K &, V &>>(std::cref(cur->key), std::ref(cur->value));
+    p = std::make_shared<std::pair<const K &, V &>>(std::cref(cur->data->first), std::ref(cur->data->second));
 }
 
 template <class K, class V>
@@ -369,8 +372,7 @@ void SearchingTree<K, V>::recursiveCopy(const std::shared_ptr<Node> &v, std::sha
     if (v == nullptr)
         return;
     v2 = std::make_shared<Node>();
-    v2->key = v->key;
-    v2->value = v->value;
+    v2->data = v->data;
     v2->priority = v->priority;
     recursiveCopy(v->left, v2->left);
     recursiveCopy(v->right, v2->right);
@@ -389,7 +391,7 @@ SearchingTree<K, V>::SearchingTree(const SearchingTree &st)
 }
 
 template <class K, class V>
-SearchingTree<K, V>& SearchingTree<K, V>::operator=(SearchingTree &&st)
+SearchingTree<K, V> &SearchingTree<K, V>::operator=(SearchingTree &&st)
 {
     if (this != &st)
     {
@@ -403,7 +405,7 @@ SearchingTree<K, V>& SearchingTree<K, V>::operator=(SearchingTree &&st)
 }
 
 template <class K, class V>
-SearchingTree<K, V>& SearchingTree<K, V>::operator=(const SearchingTree &st)
+SearchingTree<K, V> &SearchingTree<K, V>::operator=(const SearchingTree &st)
 {
     if (this != &st)
     {
@@ -432,8 +434,7 @@ void SearchingTree<K, V>::insert(const K &key, const V &value)
 
     std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>> p = split(root, key);
     std::shared_ptr<Node> newNode = reserved;
-    newNode->key = key;
-    newNode->value = value;
+    newNode->data = std::make_shared<std::pair<K, V>>(key, value);
     newNode->priority = engine();
 
     reserved = std::make_shared<Node>();
@@ -450,16 +451,32 @@ void SearchingTree<K, V>::erase(const K &key)
     if (find(key) == SearchingTree::end())
         return;
 
+    std::shared_ptr<Node> prev = nullptr;
+    bool turn = false;
     std::shared_ptr<Node> v = root;
-    while (v->key != key)
+    while (v->data->first != key)
     {
-        if (key < v->key)
+        if (key < v->data->first)
+        {
+            prev = v;
+            turn = false;
             v = v->left;
+        }
         else
+        {
+            prev = v;
+            turn = true;
             v = v->right;
+        }
     }
 
     std::shared_ptr<Node> merged = merge(v->left, v->right);
+    if (prev == nullptr)
+        root = merged;
+    else if (turn)
+        prev->right = merged;
+    else
+        prev->left = merged;
 
     updateBounds();
 }
@@ -470,9 +487,9 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::find(const K &key) c
     if (root == nullptr)
         return Iterator(reserved, this);
     std::shared_ptr<Node> cur = root;
-    while (cur->key != key)
+    while (cur->data->first != key)
     {
-        if (key < cur->key)
+        if (key < cur->data->first)
             cur = cur->left;
         else
             cur = cur->right;
@@ -488,9 +505,9 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::lower_bound(const K 
     if (root == nullptr)
         return Iterator(SearchingTree::reserved, this);
     std::shared_ptr<Node> cur = root;
-    while (cur->key != key)
+    while (cur->data->first != key)
     {
-        if (key < cur->key)
+        if (key < cur->data->first)
         {
             if (cur->left != nullptr)
                 cur = cur->left;
@@ -537,9 +554,9 @@ typename SearchingTree<K, V>::Iterator SearchingTree<K, V>::end() const
 }
 
 template <class K, class V>
-std::vector<std::pair<const K&, V&>> SearchingTree<K, V>::range(K l, K r) const
+const std::vector<std::pair<const K &, V &>> SearchingTree<K, V>::range(K l, K r) const
 {
-    std::vector<std::pair<const K&, V&>> ret;
+    std::vector<std::pair<const K &, V &>> ret;
     Iterator it = lower_bound(l);
     while (it != end() && it->first < r)
     {
